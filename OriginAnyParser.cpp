@@ -62,16 +62,23 @@ bool OriginAnyParser::parse() {
 	d_file_size = file.tellg();
 	file.seekg(0, ios_base::beg);
 
+	LOG_PRINT(logfile, "Parsing project file ...\n")
 	LOG_PRINT(logfile, "File size: %" PRId64 "\n", d_file_size)
 
 	// get file and program version, check it is a valid file
 	readFileVersion();
-	if (parseError > 1) return false;
+	if (parseError > 1) {
+		LOG_PRINT(logfile, "Parse error\n")
+		return false;
+	}
 	curpos = file.tellg();
 	LOG_PRINT(logfile, "Now at %" PRId64 " [0x%" PRIx64 "]\n", curpos, curpos)
 
 	// get global header
-	readGlobalHeader();
+	if (isOPJU)
+		readGlobalHeader_OPJU();
+	else
+		readGlobalHeader();
 	if (parseError > 1) return false;
 	curpos = file.tellg();
 	LOG_PRINT(logfile, "Now at %"  PRId64 " [0x%" PRIx64 "]\n", curpos, curpos)
@@ -206,7 +213,7 @@ string OriginAnyParser::readObjectAsString(unsigned int size) {
 		file >> c;
 		if (c != '\n') {
 			curpos = file.tellg();
-			LOG_PRINT(logfile, "Wrong delimiter %c at %" PRId64 " [0x%" PRIx64 "]\n", c, curpos, curpos)
+			LOG_PRINT(logfile, "readObjectAsString(): Wrong delimiter %c at %" PRId64 " [0x%" PRIx64 "]\n", c, curpos, curpos)
 			parseError = 4;
 			return string();
 		}
@@ -216,21 +223,86 @@ string OriginAnyParser::readObjectAsString(unsigned int size) {
 }
 
 void OriginAnyParser::readFileVersion() {
+	LOG_PRINT(logfile, "readFileVersion()\n")
 	// get file and program version, check it is a valid file
 	string sFileVersion;
 	getline(file, sFileVersion);
 
-	if ((sFileVersion.substr(0,4) != "CPYA")) {
-		LOG_PRINT(logfile, "File, is not a valid OPJ file\n")
-		if ((sFileVersion.substr(0,5) != "CPYUA")) {
-			LOG_PRINT(logfile, "File, is not a valid OPJU file\n")
-			parseError = 2;
-			return;
-		}
+	if (sFileVersion.substr(0,4) != "CPYA" && sFileVersion.substr(0,5) != "CPYUA") {
+		LOG_PRINT(logfile, "File, is not a valid OPJ or OPJU file\n")
+		parseError = 2;
+		return;
 	}
+	if (sFileVersion.substr(0,5) == "CPYUA")
+		isOPJU = true;
 
 	if (*sFileVersion.rbegin() != '#') parseError = 1;
 	LOG_PRINT(logfile, "File version string: %s\n", sFileVersion.c_str())
+}
+
+void OriginAnyParser::readGlobalHeader_OPJU() {
+	LOG_PRINT(logfile, "readGlobalHeader_OPJU()\n")
+	curpos = file.tellg();
+	LOG_PRINT(logfile, "Global header starts at %" PRId64 " [0x%" PRIx64 "],", curpos, curpos)
+
+	// get global header data
+	string gh_data;
+	getline(file, gh_data);
+
+	LOG_PRINT(logfile, "\nreadGlobalHeader_OPJU(): global header (0x) = ")
+	for (unsigned int i=0; i < gh_data.length(); i++)
+		LOG_PRINT(logfile, " %02X", ((unsigned char *)gh_data.c_str())[i])
+	LOG_PRINT(logfile, "\nreadGlobalHeader_OPJU(): global header (0x) = ")
+	for (unsigned int i=0; i < gh_data.length(); i++)
+		LOG_PRINT(logfile, " %2c", ((unsigned char *)gh_data.c_str())[i])
+	curpos = file.tellg();
+	LOG_PRINT(logfile, "\nends at %" PRId64 " [0x%" PRIx64 "]\n", curpos, curpos)
+
+	// past header
+	string h_data;
+	getline(file, h_data);
+	LOG_PRINT(logfile, "readGlobalHeader_OPJU(): header (0x) = ")
+	for (unsigned int i=0; i < h_data.length(); i++)
+		LOG_PRINT(logfile, " %02X", ((unsigned char *)h_data.c_str())[i])
+	LOG_PRINT(logfile, "\nreadGlobalHeader_OPJU(): header (%%c) = ")
+	for (unsigned int i=0; i < h_data.length(); i++)
+		LOG_PRINT(logfile, " %2c", ((unsigned char *)h_data.c_str())[i])
+	curpos = file.tellg();
+	LOG_PRINT(logfile, "\nends at %" PRId64 " [0x%" PRIx64 "]\n", curpos, curpos)
+
+	string oldh_data;
+	oldh_data = readObjectAsString(0x2B);	// TODO: size unclear
+	getline(file, oldh_data);
+	LOG_PRINT(logfile, "\nreadGlobalHeader_OPJU(): old header (0x) = ")
+	for (unsigned int i=0; i < oldh_data.length(); i++)
+		LOG_PRINT(logfile, " %02X ", ((unsigned char *)oldh_data.c_str())[i])
+	LOG_PRINT(logfile, "\nreadGlobalHeader_OPJU(): old header (%%c) = ")
+	for (unsigned int i=0; i < oldh_data.length(); i++)
+		LOG_PRINT(logfile, " %2c ", ((unsigned char *)oldh_data.c_str())[i])
+	curpos = file.tellg();
+	LOG_PRINT(logfile, "\nends at %" PRId64 " [0x%" PRIx64 "]\n", curpos, curpos)
+
+	/* set by readObjectAsString()
+	 * if (parseError > 1) {
+		LOG_PRINT(logfile, "Parse error\n")
+		return;
+	}*/
+	fflush(logfile);
+
+	// see readGlobalHeader() for old header
+	istringstream stmp;
+	stmp.str(oldh_data.substr(0x1B));
+	double dFileVersion;
+	GET_DOUBLE(stmp, dFileVersion)
+	if (dFileVersion > 8.5) {
+		fileVersion = (unsigned int)trunc(dFileVersion*100.);
+	} else {
+		fileVersion = 10*(unsigned int)trunc(dFileVersion*10.);
+	}
+	LOG_PRINT(logfile, "Project version as read from old header: %.2f (%.6f)\n\n", fileVersion/100.0, dFileVersion)
+
+	curpos = file.tellg();
+	LOG_PRINT(logfile, " ends at %" PRId64 " [0x%" PRIx64 "]\n", curpos, curpos)
 }
 
 void OriginAnyParser::readGlobalHeader() {

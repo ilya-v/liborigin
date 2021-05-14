@@ -44,8 +44,7 @@ OriginFile::OriginFile(const string& fileName)
 	}
 
 #ifdef GENERATE_CODE_FOR_LOG
-	FILE *logfile = nullptr;
-	logfile = fopen("./opjfile.log", "w");
+	FILE *logfile = fopen("./opjfile.log", "w");
 	if (logfile == nullptr)
 	{
 		ioError = errno;
@@ -53,15 +52,39 @@ OriginFile::OriginFile(const string& fileName)
 	}
 #endif // GENERATE_CODE_FOR_LOG
 
-	string vers;
-	getline(file, vers);
-	long majorVersion = strtol(vers.substr(5,1).c_str(),nullptr,10);
-	//char locale_decpoint = vers[6];
-	buildVersion = strtol(vers.substr(7).c_str(),nullptr,10);
-	//long buildNumber = strtol(vers.substr(12).c_str(),0,10);
+	string sFileVersion;
+	getline(file, sFileVersion);
+	if (sFileVersion.substr(0,4) != "CPYA" && sFileVersion.substr(0,5) != "CPYUA") {
+		LOG_PRINT(logfile, "File, is not a valid OPJ or OPJU file\n")
+		ioError = -1;
+		return;
+	}
+
+	LOG_PRINT(logfile, "Project file: %s\n", fileName.c_str())
+	LOG_PRINT(logfile, "Version string: %s\n", sFileVersion.c_str())
+	if (sFileVersion.substr(0,5) == "CPYUA") {
+		LOG_PRINT(logfile, "File type: OPJU (support currently very limited)\n")
+		isOPJU = true;
+	} else {
+		LOG_PRINT(logfile, "File type: OPJ\n")
+	}
+
+	long majorVersion, buildNumber;
+	if (isOPJU) {
+		majorVersion = strtol(sFileVersion.substr(6,2).c_str(),nullptr,10);
+		buildVersion = strtol(sFileVersion.substr(8).c_str(),nullptr,10);
+		buildNumber = strtol(sFileVersion.substr(13).c_str(),0,10);
+	} else {
+		majorVersion = strtol(sFileVersion.substr(5,1).c_str(),nullptr,10);
+		buildVersion = strtol(sFileVersion.substr(7).c_str(),nullptr,10);
+		buildNumber = strtol(sFileVersion.substr(12).c_str(),0,10);
+	}
 	file.close();
 
-	LOG_PRINT(logfile, "File: %s\n", fileName.c_str())
+	LOG_PRINT(logfile, "Major version: %lu\n", majorVersion)
+	LOG_PRINT(logfile, "Build version: %u\n", buildVersion)
+	LOG_PRINT(logfile, "Build number: %lu\n", buildNumber)
+	fflush(logfile);
 
 	// translate version
 	// see https://www.originlab.com/index.aspx?go=SUPPORT&pid=3325
@@ -160,11 +183,13 @@ OriginFile::OriginFile(const string& fileName)
 		LOG_PRINT(logfile, "Found project version 2021bSR1 (9.8.6) or newer\n")
 	}
 
+	fflush(logfile);
 	if (newFileVersion == 0) {
-		LOG_PRINT(logfile, "Found project version %.2f\n", fileVersion/100.0)
-	} else if (fileVersion < 941) {
-		LOG_PRINT(logfile, "Found project version %.1f (%.2f)\n", newFileVersion/10.0, fileVersion/100.0)
+		LOG_PRINT(logfile, "Found project version %.2f\n\n", fileVersion/100.0)
+	} else if (fileVersion < 986) {
+		LOG_PRINT(logfile, "Found project version %.1f (%.2f)\n\n", newFileVersion/10.0, fileVersion/100.0)
 	}
+	fflush(logfile);
 
 	// Close logfile, will be reopened in parser routine.
 	// There are ways to keep logfile open and pass it to parser routine,

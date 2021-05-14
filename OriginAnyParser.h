@@ -39,6 +39,7 @@ protected:
 	unsigned int readObjectSize();
 	string readObjectAsString(unsigned int);
 	void readFileVersion();
+	void readGlobalHeader_OPJU();
 	void readGlobalHeader();
 	bool readDataSetElement();
 	bool readWindowElement();
@@ -86,6 +87,8 @@ protected:
 	vector<Origin::Matrix>::difference_type imatrix;
 	vector<Origin::Excel>::difference_type iexcel;
 	int igraph, ilayer;
+private:
+	bool isOPJU{false};
 };
 
 #endif // ORIGIN_ANY_PARSER_H

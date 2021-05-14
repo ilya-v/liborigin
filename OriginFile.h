@@ -71,6 +71,7 @@ public:
 
 private:
 	unsigned int fileVersion, buildVersion, ioError;
+	bool isOPJU{false};
 	unique_ptr<OriginParser> parser;
 };
 
